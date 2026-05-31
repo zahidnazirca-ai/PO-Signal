@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="theme-color" content="#0e7490"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="PO Signal"/>
+<link rel="manifest" href="manifest.json"/>
+<title>PO Signal Analyzer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0f172a;--surface:#1e293b;--surface2:#0f172a;--border:#334155;
+  --cyan:#22d3ee;--cyan-dark:#0e7490;--green:#22c55e;--red:#ef4444;
+  --yellow:#eab308;--text:#e2e8f0;--muted:#64748b;--subtle:#94a3b8;
+  --font:'Courier New',monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+body{display:flex;flex-direction:column}
+
+/* ── TOP BAR ── */
+#topbar{
+  background:linear-gradient(135deg,#0c4a6e,var(--cyan-dark));
+  padding:12px 16px 10px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+  box-shadow:0 2px 12px rgba(0,0,0,0.4);
+}
+#topbar h1{font-size:16px;font-weight:900;letter-spacing:.15em;color:#fff}
+#topbar h1 span{color:#7dd3fc}
+#live-badge{
+  display:flex;align-items:center;gap:5px;
+  background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);
+  border-radius:20px;padding:3px 8px;font-size:10px;color:var(--green);
+}
+#live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* ── SCROLL AREA ── */
+#scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 100px}
+
+/* ── CARDS ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;padding:14px;margin-bottom:12px;
+}
+.card-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+
+/* ── PAIR SELECTOR ── */
+#pair-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
+.pair-btn{
+  padding:8px 4px;border-radius:10px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--subtle);font-family:var(--font);
+  font-size:10px;font-weight:700;cursor:pointer;text-align:center;
+  transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.pair-btn.active{background:var(--cyan-dark);color:#fff;border-color:var(--cyan-dark);box-shadow:0 0 10px rgba(14,116,144,.4)}
+.group-label{grid-column:1/-1;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;padding:4px 2px 2px;border-top:1px solid var(--border);margin-top:2px}
+#custom-input{
+  width:100%;background:var(--surface2);border:1px solid var(--cyan-dark);
+  color:var(--text);border-radius:10px;padding:8px 12px;font-family:var(--font);
+  font-size:13px;outline:none;margin-top:6px;
+}
+
+/* ── EXPIRY ── */
+#expiry-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.exp-btn{
+  padding:9px 4px;border-radius:10px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--subtle);font-family:var(--font);
+  font-size:11px;font-weight:700;cursor:pointer;text-align:center;transition:all .15s;
+}
+.exp-btn.active{background:var(--cyan-dark);color:#fff;border-color:var(--cyan-dark);box-shadow:0 0 10px rgba(14,116,144,.4)}
+
+/* ── INDICATOR BARS ── */
+.ind-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.ind-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.ind-value{font-size:13px;font-weight:700}
+.bar-track{height:5px;background:#0f172a;border-radius:4px;margin-bottom:10px;overflow:hidden;position:relative}
+.bar-fill{height:100%;border-radius:4px;transition:width .6s ease,background .4s}
+.bar-zone-low,.bar-zone-high{position:absolute;top:0;width:1px;height:100%;background:rgba(255,255,255,.15)}
+.bar-zone-low{left:30%}.bar-zone-high{left:70%}
+.stoch-zone-low{left:20%}.stoch-zone-high{left:80%}
+
+/* ── SIGNAL BOX ── */
+#signal-card{display:none}
+#signal-box{
+  border:2px solid var(--border);border-radius:14px;
+  padding:16px;text-align:center;margin-bottom:10px;transition:all .3s;
+}
+#signal-dir{font-size:26px;font-weight:900;letter-spacing:.1em;margin-bottom:4px}
+#signal-conf{font-size:11px;font-weight:700}
+.detail-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:11px}
+.detail-row:last-child{border-bottom:none}
+.detail-row .dk{color:var(--muted)}
+.detail-row .dv{color:var(--text);text-align:right;max-width:60%;line-height:1.4}
+#reasoning-box{
+  background:var(--surface2);border-radius:10px;padding:10px 12px;
+  font-size:11px;color:var(--subtle);line-height:1.6;margin-top:8px;
+}
+#entry-box{
+  background:rgba(8,145,178,.12);border:1px solid rgba(8,145,178,.3);
+  border-radius:10px;padding:8px 12px;text-align:center;
+  font-size:11px;color:var(--cyan);margin-top:8px;font-weight:700;
+}
+
+/* ── SPARKLINE ── */
+#sparkline-wrap{margin:8px 0 4px}
+
+/* ── STATUS ── */
+#status-bar{
+  font-size:10px;color:var(--cyan);text-align:center;min-height:16px;
+  letter-spacing:.05em;margin-top:4px;
+}
+
+/* ── BOTTOM BUTTON ── */
+#bottom-bar{
+  position:fixed;bottom:0;left:0;right:0;
+  padding:10px 14px 18px;
+  background:linear-gradient(to top,var(--bg) 60%,transparent);
+  z-index:100;
+}
+#analyze-btn{
+  width:100%;background:linear-gradient(135deg,var(--cyan-dark),#0284c7);
+  color:#fff;border:none;border-radius:14px;padding:15px;
+  font-family:var(--font);font-size:14px;font-weight:900;
+  letter-spacing:.12em;cursor:pointer;transition:all .2s;
+  box-shadow:0 4px 20px rgba(14,116,144,.5);
+}
+#analyze-btn:active{transform:scale(.98);box-shadow:0 2px 10px rgba(14,116,144,.3)}
+#analyze-btn:disabled{background:#1e293b;color:var(--muted);box-shadow:none}
+
+/* ── LAST UPDATED ── */
+#last-updated{font-size:10px;color:var(--muted);text-align:center;margin-top:6px}
+
+/* ── AUTO REFRESH TOGGLE ── */
+.toggle-row{display:flex;justify-content:space-between;align-items:center}
+.toggle-label{font-size:12px;color:var(--subtle)}
+.toggle{width:42px;height:24px;border-radius:12px;background:var(--border);position:relative;cursor:pointer;transition:background .2s;border:none;flex-shrink:0}
+.toggle.on{background:var(--cyan-dark)}
+.toggle-knob{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s}
+.toggle.on .toggle-knob{left:21px}
+
+/* ── CANDLE DOTS ── */
+#candle-row{display:flex;gap:8px;justify-content:center;margin:4px 0 8px}
+.cdot{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;border:1px solid var(--border)}
+.cdot.green{background:rgba(34,197,94,.15);border-color:var(--green);color:var(--green)}
+.cdot.red{background:rgba(239,68,68,.15);border-color:var(--red);color:var(--red)}
+.cdot.doji{background:rgba(148,163,184,.1);border-color:var(--subtle);color:var(--subtle)}
+.cdot.strong-green{background:rgba(34,197,94,.3);border-color:var(--green);color:var(--green)}
+.cdot.strong-red{background:rgba(239,68,68,.3);border-color:var(--red);color:var(--red)}
+
+/* ── TREND BADGE ── */
+#trend-badge{
+  display:inline-block;padding:3px 10px;border-radius:20px;
+  font-size:10px;font-weight:700;letter-spacing:.08em;
+}
+
+/* ── INSTALL BANNER ── */
+#install-banner{
+  background:rgba(14,116,144,.2);border:1px solid rgba(14,116,144,.4);
+  border-radius:12px;padding:10px 12px;margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  font-size:11px;color:var(--cyan);
+}
+#install-btn{
+  background:var(--cyan-dark);color:#fff;border:none;border-radius:8px;
+  padding:6px 12px;font-family:var(--font);font-size:11px;font-weight:700;
+  cursor:pointer;white-space:nowrap;
+}
+#dismiss-banner{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>⚡ PO <span>SIGNAL</span></h1>
+  <div id="live-badge"><span id="live-dot"></span>LIVE</div>
+</div>
+
+<!-- SCROLLABLE CONTENT -->
+<div id="scroll">
+
+  <!-- Install banner (shown if installable) -->
+  <div id="install-banner" style="display:none">
+    <span>📲 Add to Home Screen to use alongside Pocket Option</span>
+    <button id="install-btn">INSTALL</button>
+    <button id="dismiss-banner">✕</button>
+  </div>
+
+  <!-- PAIR SELECTION -->
+  <div class="card">
+    <div class="card-title">Trading Pair</div>
+    <div id="pair-grid"></div>
+    <input id="custom-input" placeholder="Custom pair (e.g. EUR/GBP OTC)" style="display:none"/>
+  </div>
+
+  <!-- EXPIRY -->
+  <div class="card">
+    <div class="card-title">Expiry Time</div>
+    <div id="expiry-grid">
+      <button class="exp-btn active" data-exp="1min">1m</button>
+      <button class="exp-btn" data-exp="2min">2m</button>
+      <button class="exp-btn" data-exp="5min">5m</button>
+      <button class="exp-btn" data-exp="10min">10m</button>
+      <button class="exp-btn" data-exp="15min">15m</button>
+    </div>
+  </div>
+
+  <!-- LIVE INDICATORS (shown after fetch) -->
+  <div class="card" id="indicators-card" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="card-title" style="margin-bottom:0">Live Indicators</div>
+      <div>
+        <span id="trend-badge">—</span>
+        <span style="font-size:10px;color:var(--muted);margin-left:6px" id="price-display"></span>
+      </div>
+    </div>
+    <svg id="sparkline" viewBox="0 0 300 48" style="width:100%;height:48px;margin-bottom:10px"></svg>
+    <div class="ind-row"><span class="ind-label">RSI 14 (Wilder)</span><span class="ind-value" id="rsi-val">—</span></div>
+    <div class="bar-track"><div class="bar-fill" id="rsi-bar" style="width:50%"></div><div class="bar-zone-low"></div><div class="bar-zone-high"></div></div>
+    <div class="ind-row"><span class="ind-label">Stoch %K · <span id="stoch-dir-label" style="color:var(--cyan)">—</span></span><span class="ind-value" id="k-val">—</span></div>
+    <div class="bar-track"><div class="bar-fill" id="k-bar" style="width:50%"></div><div class="bar-zone-low stoch-zone-low"></div><div class="bar-zone-high stoch-zone-high"></div></div>
+    <div class="ind-row"><span class="ind-label">Stoch %D</span><span class="ind-value" id="d-val">—</span></div>
+    <div class="bar-track"><div class="bar-fill" id="d-bar" style="width:50%"></div><div class="bar-zone-low stoch-zone-low"></div><div class="bar-zone-high stoch-zone-high"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:2px">
+      <span>OS zones: RSI&lt;30 · Stoch&lt;20</span><span>OB: RSI&gt;70 · Stoch&gt;80</span>
+    </div>
+    <div id="candle-row"></div>
+  </div>
+
+  <!-- SIGNAL CARD -->
+  <div class="card" id="signal-card">
+    <div class="card-title">Signal · <span id="sig-pair-label">—</span> · <span id="sig-expiry-label">—</span></div>
+    <div id="signal-box">
+      <div id="signal-dir">—</div>
+      <div id="signal-conf">—</div>
+    </div>
+    <div id="detail-rows"></div>
+    <div id="reasoning-box"></div>
+    <div id="entry-box"></div>
+    <div id="last-updated"></div>
+  </div>
+
+  <!-- AUTO REFRESH -->
+  <div class="card">
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Auto-refresh every 60s</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">Re-fetches live data automatically</div>
+      </div>
+      <button class="toggle" id="auto-toggle"><div class="toggle-knob"></div></button>
+    </div>
+  </div>
+
+  <div style="font-size:10px;color:var(--muted);text-align:center;padding:4px 0 8px">
+    Crypto: live Binance candles · Forex: AI web search<br>
+    FOR EDUCATIONAL USE ONLY · TRADE AT YOUR OWN RISK
+  </div>
+
+</div>
+
+<!-- BOTTOM BUTTON -->
+<div id="bottom-bar">
+  <button id="analyze-btn">⚡ GET LIVE SIGNAL</button>
+  <div id="status-bar"></div>
+</div>
+
+<script>
+// ─── PAIRS ───────────────────────────────────────────────────────────────────
+const PAIRS = [
+  { group: "Forex", items: ["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","EUR/GBP","EUR/JPY","GBP/JPY"] },
+  { group: "Crypto", items: ["BTC/USD","ETH/USD","XRP/USD","BNB/USD","SOL/USD","ADA/USD","DOGE/USD","LTC/USD"] },
+  { group: "Commodities", items: ["XAU/USD","XAG/USD","WTI/USD"] },
+  { group: "Custom", items: ["OTHER"] },
+];
+const CRYPTO_MAP = {
+  "BTC":"BTCUSDT","ETH":"ETHUSDT","XRP":"XRPUSDT","BNB":"BNBUSDT",
+  "SOL":"SOLUSDT","ADA":"ADAUSDT","DOGE":"DOGEUSDT","LTC":"LTCUSDT"
+};
+const CRYPTO_PAIRS = ["BTC/USD","ETH/USD","XRP/USD","BNB/USD","SOL/USD","ADA/USD","DOGE/USD","LTC/USD"];
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let activePair = "BTC/USD";
+let activeExpiry = "1min";
+let autoRefresh = false;
+let autoTimer = null;
+let deferredInstall = null;
+
+// ─── BUILD PAIR GRID ──────────────────────────────────────────────────────────
+const grid = document.getElementById('pair-grid');
+PAIRS.forEach(group => {
+  const lbl = document.createElement('div');
+  lbl.className = 'group-label';
+  lbl.textContent = group.group;
+  grid.appendChild(lbl);
+  group.items.forEach(pair => {
+    const btn = document.createElement('button');
+    btn.className = 'pair-btn' + (pair === activePair ? ' active' : '');
+    btn.textContent = pair === 'OTHER' ? '✏️ Custom' : pair;
+    btn.dataset.pair = pair;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pair-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activePair = pair;
+      document.getElementById('custom-input').style.display = pair === 'OTHER' ? 'block' : 'none';
+      document.getElementById('signal-card').style.display = 'none';
+      document.getElementById('indicators-card').style.display = 'none';
+    });
+    grid.appendChild(btn);
+  });
+});
+
+// ─── EXPIRY BUTTONS ───────────────────────────────────────────────────────────
+document.querySelectorAll('.exp-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.exp-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeExpiry = btn.dataset.exp;
+  });
+});
+
+// ─── AUTO REFRESH TOGGLE ──────────────────────────────────────────────────────
+document.getElementById('auto-toggle').addEventListener('click', function() {
+  autoRefresh = !autoRefresh;
+  this.classList.toggle('on', autoRefresh);
+  clearInterval(autoTimer);
+  if (autoRefresh) autoTimer = setInterval(analyze, 60000);
+});
+
+// ─── PWA INSTALL ──────────────────────────────────────────────────────────────
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredInstall = e;
+  document.getElementById('install-banner').style.display = 'flex';
+});
+document.getElementById('install-btn').addEventListener('click', async () => {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  const { outcome } = await deferredInstall.userChoice;
+  if (outcome === 'accepted') document.getElementById('install-banner').style.display = 'none';
+});
+document.getElementById('dismiss-banner').addEventListener('click', () => {
+  document.getElementById('install-banner').style.display = 'none';
+});
+
+// ─── INDICATOR MATH ───────────────────────────────────────────────────────────
+function calcRSI(closes, period = 14) {
+  if (closes.length < period * 2) return null;
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i-1];
+    if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+  }
+  avgGain /= period; avgLoss /= period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i-1];
+    avgGain = (avgGain*(period-1) + Math.max(d,0)) / period;
+    avgLoss = (avgLoss*(period-1) + Math.max(-d,0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  return parseFloat((100 - 100/(1 + avgGain/avgLoss)).toFixed(2));
+}
+
+function calcStochastic(highs, lows, closes, kp=14, sk=3, dp=3) {
+  if (closes.length < kp+sk+dp+2) return null;
+  const rawK = [];
+  for (let i = kp-1; i < closes.length; i++) {
+    const hi = Math.max(...highs.slice(i-kp+1,i+1));
+    const lo = Math.min(...lows.slice(i-kp+1,i+1));
+    rawK.push(hi===lo ? 50 : ((closes[i]-lo)/(hi-lo))*100);
+  }
+  const sK = [];
+  for (let i=sk-1; i<rawK.length; i++)
+    sK.push(rawK.slice(i-sk+1,i+1).reduce((a,b)=>a+b)/sk);
+  const sD = [];
+  for (let i=dp-1; i<sK.length; i++)
+    sD.push(sK.slice(i-dp+1,i+1).reduce((a,b)=>a+b)/dp);
+  if (sK.length < 2 || sD.length < 2) return null;
+  const k=+sK[sK.length-1].toFixed(2), kp2=+sK[sK.length-2].toFixed(2);
+  const d=+sD[sD.length-1].toFixed(2), dp2=+sD[sD.length-2].toFixed(2);
+  const dir = k>=d&&kp2<dp2 ? "crossing up"
+            : k<=d&&kp2>dp2 ? "crossing down"
+            : k>kp2 ? "moving up" : k<kp2 ? "moving down" : "flat";
+  return {k,d,kPrev:kp2,dPrev:dp2,dir};
+}
+
+function detectTrend(closes) {
+  if (closes.length < 12) return "Sideways";
+  const c = closes.slice(-12);
+  const peaks=[], troughs=[];
+  for (let i=1;i<c.length-1;i++){
+    if(c[i]>c[i-1]&&c[i]>c[i+1]) peaks.push(c[i]);
+    if(c[i]<c[i-1]&&c[i]<c[i+1]) troughs.push(c[i]);
+  }
+  const up = peaks.length>=2&&troughs.length>=2&&peaks[peaks.length-1]>peaks[peaks.length-2]&&troughs[troughs.length-1]>troughs[troughs.length-2];
+  const dn = peaks.length>=2&&troughs.length>=2&&peaks[peaks.length-1]<peaks[peaks.length-2]&&troughs[troughs.length-1]<troughs[troughs.length-2];
+  if(up) return "Uptrend";
+  if(dn) return "Downtrend";
+  const chg=(c[c.length-1]-c[0])/c[0]*100;
+  return chg>0.03?"Uptrend":chg<-0.03?"Downtrend":"Sideways";
+}
+
+function describeCandle(o,h,l,c){
+  const body=Math.abs(c-o), range=h-l||0.00001;
+  const upper=h-Math.max(o,c), lower=Math.min(o,c)-l;
+  if(body/range<0.08) return "doji";
+  if(lower>body*2.5&&upper<body*0.5) return c>o?"hammer":"hanging man";
+  if(upper>body*2.5&&lower<body*0.5) return c>o?"inverted hammer":"shooting star";
+  if(body/range>0.7) return c>=o?"strong green":"strong red";
+  return c>=o?"green":"red";
+}
+
+// ─── SPARKLINE ────────────────────────────────────────────────────────────────
+function drawSparkline(candles) {
+  const svg = document.getElementById('sparkline');
+  const closes = candles.slice(-40).map(c=>c.close);
+  const mn=Math.min(...closes), mx=Math.max(...closes), rng=mx-mn||1;
+  const W=300, H=48, pad=4;
+  const pts = closes.map((c,i)=>`${(i/(closes.length-1))*W},${H-pad-((c-mn)/rng)*(H-pad*2)}`).join(' ');
+  const isUp = closes[closes.length-1] >= closes[0];
+  const col = isUp ? '#22c55e' : '#ef4444';
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${col}" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="${col}" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <polygon points="0,${H} ${pts} ${W},${H}" fill="url(#sg)"/>
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
+  `;
+}
+
+// ─── BAR COLOR ────────────────────────────────────────────────────────────────
+function barColor(v, lo, hi) {
+  return v >= hi ? 'var(--red)' : v <= lo ? 'var(--green)' : 'var(--subtle)';
+}
+
+// ─── CANDLE DOTS ─────────────────────────────────────────────────────────────
+function candleClass(desc) {
+  if (desc.includes('strong green')) return 'strong-green';
+  if (desc.includes('strong red'))  return 'strong-red';
+  if (desc.includes('green') || desc.includes('hammer') || desc.includes('inverted hammer')) return 'green';
+  if (desc.includes('red') || desc.includes('shooting') || desc.includes('hanging')) return 'red';
+  return 'doji';
+}
+function candleEmoji(desc) {
+  if (desc.includes('strong green')) return '▲';
+  if (desc.includes('strong red'))  return '▼';
+  if (desc.includes('green') || desc.includes('hammer')) return '▲';
+  if (desc.includes('red') || desc.includes('shooting')) return '▼';
+  return '─';
+}
+
+// ─── FETCH CANDLES ────────────────────────────────────────────────────────────
+async function fetchCandles(pair, expiry) {
+  const imap = {"1min":"1m","2min":"1m","5min":"5m","10min":"5m","15min":"15m"};
+  const interval = imap[expiry]||"1m";
+  const clean = pair.replace(/OTC|otc|\s/g,'').replace('/','').toUpperCase();
+  const base = clean.replace('USD','').replace('USDT','');
+  if (CRYPTO_MAP[base]) {
+    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${CRYPTO_MAP[base]}&interval=${interval}&limit=80`);
+    if (!res.ok) throw new Error('Binance fetch failed');
+    const raw = await res.json();
+    return raw.map(k=>({open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));
+  }
+  return null; // Forex — Claude will web-search
+}
+
+// ─── STATUS HELPER ────────────────────────────────────────────────────────────
+function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }
+
+// ─── GENERATE SIGNAL ─────────────────────────────────────────────────────────
+async function generateSignal(indicators, pair, expiry) {
+  let userMsg;
+  if (indicators?.rsi && indicators?.stoch) {
+    userMsg = `LIVE CALCULATED INDICATORS for ${pair} (${expiry} expiry):
+Price: ${indicators.price}
+Trend: ${indicators.trend}
+Last 3 candles: ${indicators.last3.join(', ')}
+RSI 14 (Wilder Smoothing): ${indicators.rsi}
+Stochastic 14,3,3 (Slow): %K=${indicators.stoch.k}, %D=${indicators.stoch.d}, prevK=${indicators.stoch.kPrev}, prevD=${indicators.stoch.dPrev}, direction=${indicators.stoch.dir}
+USE ONLY these exact values. Do NOT re-estimate. Generate signal for ${expiry} binary options expiry.`;
+  } else {
+    userMsg = `Search for the current live price and recent price movement of ${pair} right now. Estimate RSI 14 (Wilder) and Stochastic 14,3,3 (Slow Stochastic) from recent price action. Generate a binary options signal for ${expiry} expiry.`;
+  }
+
+  const system = `You are a strict binary options signal engine. Use ONLY RSI 14 (Wilder smoothing) and Stochastic 14,3,3 (Slow Stochastic: smoothed %K then SMA %D).
+
+Signal rules — apply strictly:
+- RSI>70 AND Stoch>80 AND direction crossing/moving DOWN → PUT
+- RSI<30 AND Stoch<20 AND direction crossing/moving UP   → CALL
+- RSI 50-70 AND Stoch crossing UP from below 50          → CALL (momentum)
+- RSI 30-50 AND Stoch crossing DOWN from above 50        → PUT (momentum)
+- RSI and Stoch disagree                                 → NO TRADE
+- Stoch flat or RSI near 50                              → NO TRADE
+- Any ambiguity                                          → NO TRADE
+
+Confidence: High=extreme zone+crossover confirmed, Medium=aligned not extreme, Low=weak or estimated data
+
+Respond ONLY with valid JSON (absolutely no markdown, no backticks, no extra text):
+{"direction":"CALL","confidence":"High","rsiReading":"72.4 — overbought","stochReading":"K:83.1 D:79.2 crossing down","priceAction":"shooting star after 3 green candles","reasoning":"RSI at 72 entering overbought while Stoch crossing down from above 80 confirms bearish reversal. Price formed shooting star rejecting resistance.","entry":"Enter PUT at open of next candle"}`;
+
+  const body = {
+    model:"claude-sonnet-4-20250514", max_tokens:600, system,
+    messages:[{role:"user",content:userMsg}]
+  };
+  if (!indicators) body.tools = [{type:"web_search_20250305",name:"web_search"}];
+
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+  });
+  const data = await res.json();
+  const text = (data.content||[]).map(i=>i.type==="text"?i.text:"").join("");
+  const clean = text.replace(/```json[\s\S]*?```|```/g,"").trim();
+  return JSON.parse(clean);
+}
+
+// ─── MAIN ANALYZE ─────────────────────────────────────────────────────────────
+async function analyze() {
+  const pair = activePair === 'OTHER'
+    ? (document.getElementById('custom-input').value.trim() || 'BTC/USD')
+    : activePair;
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.textContent = 'FETCHING DATA...';
+  setStatus('');
+  document.getElementById('signal-card').style.display = 'none';
+
+  try {
+    setStatus('📡 Fetching live candles...');
+    let indicators = null;
+    const candles = await fetchCandles(pair, activeExpiry);
+
+    if (candles && candles.length >= 40) {
+      const closes = candles.map(c=>c.close);
+      const highs  = candles.map(c=>c.high);
+      const lows   = candles.map(c=>c.low);
+      const rsi   = calcRSI(closes);
+      const stoch = calcStochastic(highs,lows,closes);
+      const trend = detectTrend(closes);
+      const last3 = candles.slice(-3).map(c=>describeCandle(c.open,c.high,c.low,c.close));
+      const dp = pair.includes('JPY')?3:pair.includes('BTC')?2:5;
+      const price = closes[closes.length-1].toFixed(dp);
+      indicators = {rsi,stoch,trend,last3,price};
+
+      // Update indicators UI
+      const indCard = document.getElementById('indicators-card');
+      indCard.style.display = 'block';
+      drawSparkline(candles);
+
+      // Price & trend
+      document.getElementById('price-display').textContent = price;
+      const tb = document.getElementById('trend-badge');
+      tb.textContent = trend;
+      tb.style.background = trend==='Uptrend'?'rgba(34,197,94,.15)':trend==='Downtrend'?'rgba(239,68,68,.15)':'rgba(234,179,8,.15)';
+      tb.style.color = trend==='Uptrend'?'var(--green)':trend==='Downtrend'?'var(--red)':'var(--yellow)';
+      tb.style.border = '1px solid '+(trend==='Uptrend'?'var(--green)':trend==='Downtrend'?'var(--red)':'var(--yellow)');
+
+      // RSI bar
+      if (rsi !== null) {
+        const rc = barColor(rsi,30,70);
+        document.getElementById('rsi-val').textContent = rsi.toFixed(1);
+        document.getElementById('rsi-val').style.color = rc;
+        document.getElementById('rsi-bar').style.width = rsi+'%';
+        document.getElementById('rsi-bar').style.background = rc;
+      }
+
+      // Stoch bars
+      if (stoch) {
+        const kc = barColor(stoch.k,20,80), dc = barColor(stoch.d,20,80);
+        const dirIcon = stoch.dir.includes('up')?'↗':stoch.dir.includes('down')?'↘':'→';
+        document.getElementById('stoch-dir-label').textContent = dirIcon+' '+stoch.dir;
+        document.getElementById('k-val').textContent = stoch.k.toFixed(1);
+        document.getElementById('k-val').style.color = kc;
+        document.getElementById('k-bar').style.width = stoch.k+'%';
+        document.getElementById('k-bar').style.background = kc;
+        document.getElementById('d-val').textContent = stoch.d.toFixed(1);
+        document.getElementById('d-val').style.color = dc;
+        document.getElementById('d-bar').style.width = stoch.d+'%';
+        document.getElementById('d-bar').style.background = dc;
+      }
+
+      // Candle dots
+      const cr = document.getElementById('candle-row');
+      cr.innerHTML = last3.map((c,i)=>`
+        <div class="cdot ${candleClass(c)}" title="${c}">${candleEmoji(c)}</div>
+      `).join('');
+
+      setStatus('✓ RSI + Stoch calculated · Generating signal...');
+    } else {
+      setStatus('🔍 AI searching live price data...');
+    }
+
+    btn.textContent = 'GENERATING SIGNAL...';
+    const signal = await generateSignal(indicators, pair, activeExpiry);
+
+    // Render signal
+    const isCall = signal.direction==='CALL';
+    const isPut  = signal.direction==='PUT';
+    const sc = document.getElementById('signal-card');
+    sc.style.display = 'block';
+    document.getElementById('sig-pair-label').textContent = pair;
+    document.getElementById('sig-expiry-label').textContent = activeExpiry;
+
+    const sbox = document.getElementById('signal-box');
+    sbox.style.borderColor = isCall?'var(--green)':isPut?'var(--red)':'var(--yellow)';
+    sbox.style.background  = isCall?'rgba(34,197,94,.08)':isPut?'rgba(239,68,68,.08)':'rgba(234,179,8,.08)';
+
+    const sdir = document.getElementById('signal-dir');
+    sdir.textContent = isCall?'🟢 CALL':isPut?'🔴 PUT':'⚠️ NO TRADE';
+    sdir.style.color = isCall?'var(--green)':isPut?'var(--red)':'var(--yellow)';
+
+    const sconf = document.getElementById('signal-conf');
+    sconf.textContent = 'Confidence: '+signal.confidence;
+    sconf.style.color = signal.confidence==='High'?'var(--green)':signal.confidence==='Medium'?'var(--yellow)':'var(--red)';
+
+    document.getElementById('detail-rows').innerHTML = `
+      <div class="detail-row"><span class="dk">RSI 14</span><span class="dv">${signal.rsiReading}</span></div>
+      <div class="detail-row"><span class="dk">Stoch 14,3,3</span><span class="dv">${signal.stochReading}</span></div>
+      <div class="detail-row"><span class="dk">Price Action</span><span class="dv">${signal.priceAction}</span></div>
+    `;
+    document.getElementById('reasoning-box').textContent = signal.reasoning;
+    document.getElementById('entry-box').textContent = '⏱ '+signal.entry;
+    document.getElementById('last-updated').textContent = 'Updated: '+new Date().toLocaleTimeString();
+
+    // Scroll to signal
+    sc.scrollIntoView({behavior:'smooth',block:'start'});
+    setStatus('');
+  } catch(e) {
+    setStatus('⚠ '+e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ REFRESH SIGNAL';
+  }
+}
+
+document.getElementById('analyze-btn').addEventListener('click', analyze);
+
+// ─── SERVICE WORKER ───────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>

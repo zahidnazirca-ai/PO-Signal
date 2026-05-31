@@ -1,0 +1,56 @@
+═══════════════════════════════════════════════
+  PO SIGNAL ANALYZER — Android PWA
+  Run side-by-side with Pocket Option app
+═══════════════════════════════════════════════
+
+HOW TO INSTALL ON ANDROID (2 minutes):
+────────────────────────────────────────
+
+OPTION A — Host on GitHub Pages (Free, Recommended):
+1. Create a free GitHub account at github.com
+2. Create a new repository called "po-signal"
+3. Upload all files in this folder to the repo
+4. Go to Settings → Pages → set source to "main branch"
+5. Your app URL: https://yourusername.github.io/po-signal
+6. Open that URL in Chrome on Android
+7. Tap the banner "Add to Home Screen" OR
+   tap ⋮ menu → "Add to Home Screen"
+8. App icon appears on your home screen ✓
+
+OPTION B — Host locally with a simple server:
+1. Install "Simple HTTP Server" app from Play Store
+2. Put the files in a folder on your phone
+3. Run the server, open localhost:8080 in Chrome
+4. Add to home screen
+
+OPTION C — Use via Claude.ai (Easiest):
+The app is already built as an Artifact in Claude.
+Open it there and add to home screen directly.
+
+HOW TO USE ALONGSIDE POCKET OPTION:
+─────────────────────────────────────
+Android Split Screen:
+1. Open Pocket Option app
+2. Hold the recent apps button
+3. Select "Split Screen"
+4. Choose PO Signal from other apps
+
+Or use normally:
+1. Open PO Signal → get signal
+2. Switch to Pocket Option → execute trade
+3. Switch back for next signal
+
+FEATURES:
+──────────
+✓ Installable as Android app (no Play Store)
+✓ Works offline (cached shell)
+✓ Exact RSI 14 (Wilder Smoothing)
+✓ Exact Stochastic 14,3,3 (Slow)
+✓ Live Binance candles for crypto
+✓ AI web search for forex pairs
+✓ Auto-refresh every 60 seconds
+✓ Live sparkline chart
+✓ Indicator bars with OB/OS zones
+
+FOR EDUCATIONAL USE ONLY · TRADE AT YOUR OWN RISK
+═══════════════════════════════════════════════════
