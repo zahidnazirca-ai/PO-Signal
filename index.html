@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="PO Signal"/>
 <link rel="manifest" href="manifest.json"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src *; img-src * data:;"/>
 <title>PO Signal Analyzer</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -455,67 +456,177 @@ function candleEmoji(desc) {
 }
 
 // ─── FETCH CANDLES ────────────────────────────────────────────────────────────
+// Forex symbol map for Frankfurter API (free, no key, CORS-friendly)
+const FOREX_PAIRS = {
+  "EUR/USD":["EUR","USD"],"GBP/USD":["GBP","USD"],"USD/JPY":["USD","JPY"],
+  "AUD/USD":["AUD","USD"],"USD/CAD":["USD","CAD"],"EUR/GBP":["EUR","GBP"],
+  "EUR/JPY":["EUR","JPY"],"GBP/JPY":["GBP","JPY"],"NZD/USD":["NZD","USD"],
+  "USD/CHF":["USD","CHF"],"XAU/USD":["XAU","USD"],"XAG/USD":["XAG","USD"]
+};
+
+// Build synthetic OHLCV candles from daily forex rates
+// Uses Frankfurter (ECB data) for major pairs — free, no API key, no CORS issues
+async function fetchForexCandles(pair) {
+  const basePair = pair.replace(/\s*OTC\s*/i,'').trim();
+  const mapping = FOREX_PAIRS[basePair];
+  if (!mapping) return null;
+  const [from, to] = mapping;
+
+  // Get 30 days of daily rates to calculate indicators
+  const end = new Date().toISOString().split('T')[0];
+  const start = new Date(Date.now() - 40*24*60*60*1000).toISOString().split('T')[0];
+  const url = `https://api.frankfurter.app/${start}..${end}?from=${from}&to=${to}`;
+  
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rates = data.rates;
+    if (!rates) return null;
+
+    // Convert daily rates to candle-like objects
+    const dates = Object.keys(rates).sort();
+    if (dates.length < 20) return null;
+
+    return dates.map((date, i) => {
+      const close = rates[date][to] || Object.values(rates[date])[0];
+      // Simulate OHLC from close prices (realistic enough for RSI/Stoch)
+      const prev = i > 0 ? (rates[dates[i-1]][to] || Object.values(rates[dates[i-1]])[0]) : close;
+      const change = Math.abs(close - prev);
+      const noise = change * 0.3 || close * 0.0005;
+      return {
+        open: prev,
+        high: Math.max(prev, close) + noise,
+        low:  Math.min(prev, close) - noise,
+        close: close
+      };
+    });
+  } catch(e) { return null; }
+}
+
 async function fetchCandles(pair, expiry) {
   const imap = {"1min":"1m","2min":"1m","5min":"5m","10min":"5m","15min":"15m"};
   const interval = imap[expiry]||"1m";
   const clean = pair.replace(/OTC|otc|\s/g,'').replace('/','').toUpperCase();
   const base = clean.replace('USD','').replace('USDT','');
+
+  // Crypto — Binance live candles
   if (CRYPTO_MAP[base]) {
     const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${CRYPTO_MAP[base]}&interval=${interval}&limit=80`);
     if (!res.ok) throw new Error('Binance fetch failed');
     const raw = await res.json();
     return raw.map(k=>({open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));
   }
-  return null; // Forex — Claude will web-search
+
+  // Forex/Gold/Silver — Frankfurter API (ECB daily rates, free)
+  const forexCandles = await fetchForexCandles(pair);
+  if (forexCandles && forexCandles.length >= 20) return forexCandles;
+
+  return null;
 }
 
 // ─── STATUS HELPER ────────────────────────────────────────────────────────────
 function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }
 
 // ─── GENERATE SIGNAL ─────────────────────────────────────────────────────────
-async function generateSignal(indicators, pair, expiry) {
-  let userMsg;
-  if (indicators?.rsi && indicators?.stoch) {
-    userMsg = `LIVE CALCULATED INDICATORS for ${pair} (${expiry} expiry):
-Price: ${indicators.price}
-Trend: ${indicators.trend}
-Last 3 candles: ${indicators.last3.join(', ')}
-RSI 14 (Wilder Smoothing): ${indicators.rsi}
-Stochastic 14,3,3 (Slow): %K=${indicators.stoch.k}, %D=${indicators.stoch.d}, prevK=${indicators.stoch.kPrev}, prevD=${indicators.stoch.dPrev}, direction=${indicators.stoch.dir}
-USE ONLY these exact values. Do NOT re-estimate. Generate signal for ${expiry} binary options expiry.`;
+// Local rule-based signal engine — works 100% offline, no API needed
+function generateSignalLocal(indicators) {
+  const { rsi, stoch, trend, last3, price } = indicators;
+  const k = stoch.k, d = stoch.d, dir = stoch.dir;
+  const dirDown = dir === "crossing down" || dir === "moving down";
+  const dirUp   = dir === "crossing up"   || dir === "moving up";
+  const crossDown = dir === "crossing down";
+  const crossUp   = dir === "crossing up";
+  let direction = "NO TRADE", confidence = "Low", reasoning = "";
+
+  if (rsi > 70 && k > 80 && dirDown) {
+    direction = "PUT"; confidence = crossDown ? "High" : "Medium";
+    reasoning = "RSI " + rsi + " overbought + Stoch " + k + " overbought + " + dir + " = bearish reversal confirmed.";
+  } else if (rsi < 30 && k < 20 && dirUp) {
+    direction = "CALL"; confidence = crossUp ? "High" : "Medium";
+    reasoning = "RSI " + rsi + " oversold + Stoch " + k + " oversold + " + dir + " = bullish reversal confirmed.";
+  } else if (rsi > 55 && rsi <= 70 && k > 50 && crossUp && trend === "Uptrend") {
+    direction = "CALL"; confidence = "Medium";
+    reasoning = "RSI " + rsi + " bullish zone + Stoch crossing up + Uptrend = momentum CALL.";
+  } else if (rsi < 45 && rsi >= 30 && k < 50 && crossDown && trend === "Downtrend") {
+    direction = "PUT"; confidence = "Medium";
+    reasoning = "RSI " + rsi + " bearish zone + Stoch crossing down + Downtrend = momentum PUT.";
+  } else if (rsi > 70 && k < 50) {
+    reasoning = "RSI overbought (" + rsi + ") but Stoch at " + k + " — conflicting. Wait.";
+  } else if (rsi < 30 && k > 50) {
+    reasoning = "RSI oversold (" + rsi + ") but Stoch at " + k + " — conflicting. Wait.";
+  } else if (k > 80 && dirDown) {
+    direction = "PUT"; confidence = "Low";
+    reasoning = "Stoch overbought + moving down but RSI " + rsi + " not confirming. Low confidence PUT.";
+  } else if (k < 20 && dirUp) {
+    direction = "CALL"; confidence = "Low";
+    reasoning = "Stoch oversold + moving up but RSI " + rsi + " not confirming. Low confidence CALL.";
+  } else if (dir === "flat") {
+    reasoning = "Stochastic flat (K:" + k + " D:" + d + "). No momentum — wait for crossover.";
   } else {
-    userMsg = `Search for the current live price and recent price movement of ${pair} right now. Estimate RSI 14 (Wilder) and Stochastic 14,3,3 (Slow Stochastic) from recent price action. Generate a binary options signal for ${expiry} expiry.`;
+    reasoning = "RSI " + rsi + " + Stoch K:" + k + " D:" + d + " (" + dir + ") — no strong confluence. Wait.";
   }
 
-  const system = `You are a strict binary options signal engine. Use ONLY RSI 14 (Wilder smoothing) and Stochastic 14,3,3 (Slow Stochastic: smoothed %K then SMA %D).
+  const lastC = last3[last3.length-1]||"";
+  if (direction==="CALL" && (lastC.includes("red")||lastC.includes("shooting"))) {
+    confidence = confidence==="High"?"Medium":"Low";
+    reasoning += " Last candle bearish — wait for green confirmation.";
+  }
+  if (direction==="PUT" && (lastC.includes("green")||lastC.includes("hammer"))) {
+    confidence = confidence==="High"?"Medium":"Low";
+    reasoning += " Last candle bullish — wait for red confirmation.";
+  }
 
-Signal rules — apply strictly:
-- RSI>70 AND Stoch>80 AND direction crossing/moving DOWN → PUT
-- RSI<30 AND Stoch<20 AND direction crossing/moving UP   → CALL
-- RSI 50-70 AND Stoch crossing UP from below 50          → CALL (momentum)
-- RSI 30-50 AND Stoch crossing DOWN from above 50        → PUT (momentum)
-- RSI and Stoch disagree                                 → NO TRADE
-- Stoch flat or RSI near 50                              → NO TRADE
-- Any ambiguity                                          → NO TRADE
-
-Confidence: High=extreme zone+crossover confirmed, Medium=aligned not extreme, Low=weak or estimated data
-
-Respond ONLY with valid JSON (absolutely no markdown, no backticks, no extra text):
-{"direction":"CALL","confidence":"High","rsiReading":"72.4 — overbought","stochReading":"K:83.1 D:79.2 crossing down","priceAction":"shooting star after 3 green candles","reasoning":"RSI at 72 entering overbought while Stoch crossing down from above 80 confirms bearish reversal. Price formed shooting star rejecting resistance.","entry":"Enter PUT at open of next candle"}`;
-
-  const body = {
-    model:"claude-sonnet-4-20250514", max_tokens:600, system,
-    messages:[{role:"user",content:userMsg}]
+  return {
+    direction, confidence,
+    rsiReading: rsi + (rsi>70?" — overbought ⚠":rsi<30?" — oversold ⚠":rsi>50?" — bullish":" — bearish"),
+    stochReading: "K:" + k + " D:" + d + " — " + dir,
+    priceAction: "Last 3: " + last3.join(", "),
+    reasoning,
+    entry: direction==="NO TRADE"
+      ? "Wait for RSI + Stoch alignment before entering"
+      : "Enter " + direction + " at open of next candle. Price: " + price
   };
-  if (!indicators) body.tools = [{type:"web_search_20250305",name:"web_search"}];
+}
 
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
-  });
-  const data = await res.json();
-  const text = (data.content||[]).map(i=>i.type==="text"?i.text:"").join("");
-  const clean = text.replace(/```json[\s\S]*?```|```/g,"").trim();
-  return JSON.parse(clean);
+async function generateSignal(indicators, pair, expiry) {
+  if (indicators && indicators.rsi && indicators.stoch) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:500,
+          system:"Binary options signal engine. RSI 14 + Stochastic 14,3,3 rules only. Respond ONLY with valid JSON no markdown: {direction,confidence,rsiReading,stochReading,priceAction,reasoning,entry}",
+          messages:[{role:"user",content:"Pair:"+pair+" Expiry:"+expiry+" RSI:"+indicators.rsi+" StochK:"+indicators.stoch.k+" StochD:"+indicators.stoch.d+" dir:"+indicators.stoch.dir+" trend:"+indicators.trend+" candles:"+indicators.last3.join(",")}]
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = (data.content||[]).map(function(i){return i.type==="text"?i.text:""}).join("");
+        const clean = text.replace(/```json[\s\S]*?```|```/g,"").trim();
+        if (clean.startsWith("{")) return JSON.parse(clean);
+      }
+    } catch(e) {}
+    return generateSignalLocal(indicators);
+  }
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        model:"claude-sonnet-4-20250514", max_tokens:600,
+        system:"Search for live "+pair+" price and estimate RSI 14 + Stochastic 14,3,3. Respond ONLY with JSON: {direction,confidence,rsiReading,stochReading,priceAction,reasoning,entry}",
+        messages:[{role:"user",content:"Live signal for "+pair+", "+expiry+" expiry"}],
+        tools:[{type:"web_search_20250305",name:"web_search"}]
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const text = (data.content||[]).map(function(i){return i.type==="text"?i.text:""}).join("");
+      const clean = text.replace(/```json[\s\S]*?```|```/g,"").trim();
+      if (clean.startsWith("{")) return JSON.parse(clean);
+    }
+  } catch(e) {}
+  return {direction:"NO TRADE",confidence:"Low",rsiReading:"Unavailable",stochReading:"Unavailable",priceAction:"Could not fetch forex data",reasoning:"Forex live data unavailable. Use crypto pairs (BTC/ETH/SOL etc.) for guaranteed live signals — they use Binance directly.",entry:"Switch to a crypto pair for live signals"};
 }
 
 // ─── MAIN ANALYZE ─────────────────────────────────────────────────────────────
